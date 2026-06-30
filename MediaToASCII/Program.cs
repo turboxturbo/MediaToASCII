@@ -1,68 +1,81 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
+using System;
+using System.IO;
+using SkiaSharp;
 
 namespace MediaToASCII
 {
     internal class Program
     {
         private const double WIDTH_OFFSET = 1.5;
-        private const int MAX_WIDTH = 600;
+        private const int MAX_WIDTH = 474;
 
-        [STAThread]
         static void Main(string[] args)
         {
-            var openFileDialog = new OpenFileDialog
-            {
-                Filter = "Images|*.bmp;*.png;*.jpg;*.jpeg" // разрешенные форматы
-            };
+            Console.WriteLine("Press enter to start, then type image path");
 
-            Console.WriteLine("Press enter to start");
-
-            while(true) 
+            while (true)
             {
                 Console.ReadLine();
 
-                if (openFileDialog.ShowDialog() != DialogResult.OK) // Если окно открылось некорректно - выходим из цикла
+                var path = PickFile();
+
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 {
+                    Console.WriteLine("No file selected, try again.");
                     continue;
                 }
 
-                Console.Clear(); // очистить консоль
+                var bitmap = SKBitmap.Decode(path);
+                if (bitmap == null)
+                {
+                    Console.WriteLine("Could not decode image, try again.");
+                    continue;
+                }
 
-                var bitmap = new Bitmap(openFileDialog.FileName);
                 bitmap = ResizeBitmap(bitmap);
                 bitmap.ToGrayScale();
 
                 var converter = new BitmapToASCIIConverter(bitmap);
                 var rows = converter.Convert();
 
+                Console.Clear();
                 foreach (var row in rows)
-                { 
+                {
                     Console.WriteLine(row);
                 }
 
                 Console.SetCursorPosition(0, 0);
-
             }
         }
-        
 
-        private static Bitmap ResizeBitmap(Bitmap bitmap)
+        private static string? PickFile()
         {
-            var maxWidth = MAX_WIDTH;
-            var newHeight = bitmap.Height / WIDTH_OFFSET * maxWidth / bitmap.Width;
-            if (bitmap.Width > maxWidth || bitmap.Height > newHeight)
+            var psi = new System.Diagnostics.ProcessStartInfo
             {
-                bitmap = new Bitmap(bitmap, new Size(maxWidth, (int)newHeight));
+                FileName = "osascript",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            using var process = System.Diagnostics.Process.Start(psi)!;
+            process.StandardInput.WriteLine("POSIX path of (choose file with prompt \"Select an image\" of type {\"public.image\"})");
+            process.StandardInput.Close();
+            var result = process.StandardOutput.ReadToEnd().Trim();
+            process.WaitForExit();
+            return process.ExitCode == 0 ? result : null;
+        }
+
+        private static SKBitmap ResizeBitmap(SKBitmap bitmap)
+        {
+            var newHeight = (int)(bitmap.Height / WIDTH_OFFSET * MAX_WIDTH / bitmap.Width);
+            if (bitmap.Width > MAX_WIDTH || bitmap.Height > newHeight)
+            {
+                var resized = bitmap.Resize(new SKImageInfo(MAX_WIDTH, newHeight), SKFilterQuality.Medium);
+                bitmap.Dispose();
+                return resized;
             }
             return bitmap;
-
         }
     }
 }
-
